@@ -323,18 +323,6 @@ if login_response.status_code == 200:
             print("No pagination found")
             more_pages = False
     
-    # Save the data to CSV
-    csv_filename = "foreclosures.csv"
-    print(f"Saving data to {csv_filename}...")
-    
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['foreclosure_number', 'published_dates', 'address', 'name', 'description', 'url']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        
-        writer.writeheader()
-        for foreclosure in all_foreclosures:
-            writer.writerow(foreclosure)
-    
     # Save the data to JSON
     json_filename = "foreclosures.json"
     print(f"Saving data to {json_filename}...")
@@ -343,6 +331,387 @@ if login_response.status_code == 200:
         json.dump(all_foreclosures, jsonfile, indent=4)
     
     print(f"Scraping completed. Scraped {len(all_foreclosures)} foreclosures.")
+
+    #Data Cleaning using Groq
+    print("Starting data processing with Groq API...")
+    
+    # Define helper functions before using them
+    # Function to process a single batch with requests
+    def process_batch_with_requests(batch, api_key, processed_records):
+        import requests
+        
+        # Define the API URL
+        api_url = "https://api.groq.com/openai/v1/chat/completions"
+        
+        # Define the headers
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Create the payload
+        payload = {
+            "model": "llama3-8b-8192",
+            "messages": [
+                {"role": "system", "content": "You are a data extraction expert. Extract structured data from foreclosure notices."},
+                {"role": "user", "content": f"""
+                Extract the following fields from these foreclosure notices and return as JSON: 
+                1) Name
+                2) Address
+                3) City
+                4) State
+                5) Zip
+                6) Mortgage or a lien (Condo?)
+                7) Sale Date
+                8) Amount Due
+                9) Redemption Period
+                10) Attorney Name
+                11) Attorney Address
+                12) Attorney phone number (as 'Attorney Phone Number')
+                13) Attorney File #
+                14) First date published in Legal News (as 'First date published in Legal News')
+                15) Last Date Published in Legal News
+                16) Lender/Mortgage company's name
+                17) Recorded Date
+                
+                IMPORTANT: Please use EXACTLY these field names in your response.
+                Here's the data: {json.dumps(batch, indent=2)}
+                """}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4000
+        }
+        
+        try:
+            # Make the API call
+            response = requests.post(api_url, headers=headers, json=payload)
+            
+            if response.status_code == 200:
+                result = response.json()
+                content = result["choices"][0]["message"]["content"]
+                
+                # Try to parse the response
+                try:
+                    if '```json' in content:
+                        json_str = content.split('```json')[1].split('```')[0].strip()
+                        batch_records = json.loads(json_str)
+                        processed_records.extend(batch_records)
+                    elif '```' in content:
+                        json_str = content.split('```')[1].split('```')[0].strip()
+                        if json_str.startswith('json'):
+                            json_str = json_str[4:].strip()
+                        batch_records = json.loads(json_str)
+                        processed_records.extend(batch_records)
+                    else:
+                        try:
+                            batch_records = json.loads(content)
+                            processed_records.extend(batch_records if isinstance(batch_records, list) else [batch_records])
+                        except:
+                            print(f"Could not parse response for this batch")
+                except Exception as e:
+                    print(f"Error parsing response: {str(e)}")
+            else:
+                print(f"API call failed with status code {response.status_code}")
+                print(response.text)
+        
+        except Exception as e:
+            print(f"Error making API request: {str(e)}")
+
+    # Function to process with requests as a fallback for the entire dataset
+    def process_with_requests(foreclosure_data, api_key):
+        if not api_key:
+            print("No API key provided for fallback processing")
+            return
+            
+        import requests
+        
+        # Define the API URL
+        api_url = "https://api.groq.com/openai/v1/chat/completions"
+        
+        # Define the headers
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        processed_records = []
+        
+        # Process foreclosures in batches
+        batch_size = 5
+        for i in range(0, len(foreclosure_data), batch_size):
+            batch = foreclosure_data[i:i+batch_size]
+            
+            # Create the payload
+            payload = {
+                "model": "llama3-8b-8192",
+                "messages": [
+                    {"role": "system", "content": "You are a data extraction expert. Extract structured data from foreclosure notices."},
+                    {"role": "user", "content": f"""
+                    Extract the following fields from these foreclosure notices and return as JSON: 
+                    1) Name
+                    2) Address
+                    3) City
+                    4) State
+                    5) Zip
+                    6) Mortgage or a lien (Condo?)
+                    7) Sale Date
+                    8) Amount Due
+                    9) Redemption Period
+                    10) Attorney Name
+                    11) Attorney Address
+                    12) Attorney phone number (as 'Attorney phone number')
+                    13) Attorney File #
+                    14) First date published in Legal News (as 'First date published in Legal News')
+                    15) Last Date Published in Legal News
+                    16) Lender/Mortgage company's name
+                    17) Recorded Date
+                    
+                    IMPORTANT: Please use EXACTLY these field names in your response.
+                    Here's the data: {json.dumps(batch, indent=2)}
+                    """}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 4000
+            }
+            
+            try:
+                # Make the API call
+                response = requests.post(api_url, headers=headers, json=payload)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    
+                    # Try to parse the response
+                    try:
+                        if '```json' in content:
+                            json_str = content.split('```json')[1].split('```')[0].strip()
+                            batch_records = json.loads(json_str)
+                            processed_records.extend(batch_records)
+                        elif '```' in content:
+                            json_str = content.split('```')[1].split('```')[0].strip()
+                            if json_str.startswith('json'):
+                                json_str = json_str[4:].strip()
+                            batch_records = json.loads(json_str)
+                            processed_records.extend(batch_records)
+                        else:
+                            try:
+                                batch_records = json.loads(content)
+                                processed_records.extend(batch_records if isinstance(batch_records, list) else [batch_records])
+                            except:
+                                print(f"Could not parse response for batch {i//batch_size + 1}")
+                    except Exception as e:
+                        print(f"Error parsing response: {str(e)}")
+                else:
+                    print(f"API call failed with status code {response.status_code}")
+                    print(response.text)
+            
+            except Exception as e:
+                print(f"Error making API request: {str(e)}")
+            
+            print(f"Processed batch {i//batch_size + 1} of {(len(foreclosure_data)-1)//batch_size + 1}")
+            time.sleep(1)
+        
+        # Save the processed data
+        ai_csv_filename = "foreclosures_processed.csv"
+        print(f"Saving processed data to {ai_csv_filename}...")
+        
+        # Define the fields with exactly matching names
+        ai_fieldnames = [
+            'Name', 'Address', 'City', 'State', 'Zip', 
+            'Mortgage or a lien (Condo?)', 'Sale Date', 'Amount Due', 'Redemption Period',
+            'Attorney Name', 'Attorney Address', 'Attorney phone number', 'Attorney File #',
+            'First date published in Legal News', 'Last Date Published in Legal News',
+            'Lender/Mortgage company\'s name', 'Recorded Date'
+        ]
+        
+        with open(ai_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=ai_fieldnames)
+            writer.writeheader()
+            for record in processed_records:
+                # Create a new record with standardized field names
+                standardized_record = {}
+                for field in ai_fieldnames:
+                    # Try different variations of field names
+                    if field in record:
+                        standardized_record[field] = record[field]
+                    # Try with lowercase
+                    elif field.lower() in {k.lower(): k for k in record}:
+                        matching_key = {k.lower(): k for k in record}[field.lower()]
+                        standardized_record[field] = record[matching_key]
+                    # Handle special cases
+                    elif field == 'Attorney phone number' and 'Attorney Phone Number' in record:
+                        standardized_record[field] = record['Attorney Phone Number']
+                    elif field == 'First date published in Legal News' and 'First Date Published in Legal News' in record:
+                        standardized_record[field] = record['First Date Published in Legal News']
+                    else:
+                        standardized_record[field] = "N/A"
+                
+                writer.writerow(standardized_record)
+        
+        print(f"AI processing completed with fallback method. Saved to {ai_csv_filename}")
+        
+    try:
+        from groq import Groq
+        
+        # Load the foreclosure data
+        with open("foreclosures.json", 'r', encoding='utf-8') as f:
+            foreclosure_data = json.load(f)
+        
+        # Initialize Groq client
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        if not groq_api_key:
+            print("GROQ_API_KEY not found in environment variables.")
+            raise ValueError("GROQ_API_KEY is required")
+        
+        # Initialize with the updated Groq client
+        client = Groq(api_key=groq_api_key)
+        
+        # Create processed records list
+        processed_records = []
+        
+        # Process foreclosures in batches to avoid token limits
+        batch_size = 5
+        for i in range(0, len(foreclosure_data), batch_size):
+            batch = foreclosure_data[i:i+batch_size]
+            
+            # Create a combined prompt with the current batch
+            combined_prompt = f"""
+            I need to extract structured data from these foreclosure notices. Please parse the following JSON data and extract these fields:
+            
+            1) Name
+            2) Address
+            3) City
+            4) State
+            5) Zip
+            6) Mortgage or a lien (Condo?)
+            7) Sale Date
+            8) Amount Due
+            9) Redemption Period
+            10) Attorney Name
+            11) Attorney Address
+            12) Attorney phone number
+            13) Attorney File #
+            14) First date published in Legal News
+            15) Last Date Published in Legal News
+            16) Lender/Mortgage company's name
+            17) Recorded Date
+            
+            Return the data as a JSON array with these fields for each record. If a field cannot be found, use null or N/A.
+            
+            IMPORTANT: Please use EXACTLY these field names in your response.
+            
+            Here is the foreclosure data to parse:
+            {json.dumps(batch, indent=2)}
+            """
+            
+            # Make API call to Groq
+            try:
+                response = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[
+                        {"role": "system", "content": "You are a data extraction expert. Extract structured data from foreclosure notices."},
+                        {"role": "user", "content": combined_prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=4000
+                )
+                
+                # Parse the response from Groq
+                result = response.choices[0].message.content
+                
+                # Parse the AI's response to get structured data
+                try:
+                    # Try to detect if the AI returned JSON
+                    if '```json' in result:
+                        json_str = result.split('```json')[1].split('```')[0].strip()
+                        batch_records = json.loads(json_str)
+                        processed_records.extend(batch_records)
+                    elif '```' in result:
+                        # Try to find any code block
+                        json_str = result.split('```')[1].split('```')[0].strip()
+                        if json_str.startswith('json'):
+                            json_str = json_str[4:].strip()
+                        batch_records = json.loads(json_str)
+                        processed_records.extend(batch_records)
+                    else:
+                        # Try to parse the whole response as JSON
+                        try:
+                            batch_records = json.loads(result)
+                            processed_records.extend(batch_records if isinstance(batch_records, list) else [batch_records])
+                        except:
+                            print(f"Received text response from Groq for batch {i//batch_size + 1}, manual parsing needed.")
+                            print(result[:500] + "..." if len(result) > 500 else result)
+                except Exception as e:
+                    print(f"Error parsing Groq response: {str(e)}")
+                    print(result[:500] + "..." if len(result) > 500 else result)
+                    
+            except Exception as e:
+                print(f"Error calling Groq API: {str(e)}")
+                # If there's an error with the Groq client, fall back to using requests
+                print("Falling back to using requests for this batch...")
+                process_batch_with_requests(batch, groq_api_key, processed_records)
+            
+            print(f"Processed batch {i//batch_size + 1} of {(len(foreclosure_data)-1)//batch_size + 1}")
+            time.sleep(1)  # Avoid rate limits
+        
+        # Save the processed data to CSV with the required fields
+        ai_csv_filename = "foreclosures_processed.csv"
+        print(f"Saving processed data to {ai_csv_filename}...")
+        
+        # Define the fields as per the requirements
+        ai_fieldnames = [
+            'Name', 'Address', 'City', 'State', 'Zip', 
+            'Mortgage or a lien (Condo?)', 'Sale Date', 'Amount Due', 'Redemption Period',
+            'Attorney Name', 'Attorney Address', 'Attorney phone number', 'Attorney File #',
+            'First date published in Legal News', 'Last Date Published in Legal News',
+            'Lender/Mortgage company\'s name', 'Recorded Date'
+        ]
+        
+        with open(ai_csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=ai_fieldnames)
+            writer.writeheader()
+            for record in processed_records:
+                # Create a new record with standardized field names
+                standardized_record = {}
+                for field in ai_fieldnames:
+                    # Try different variations of field names
+                    if field in record:
+                        standardized_record[field] = record[field]
+                    # Try with lowercase
+                    elif field.lower() in {k.lower(): k for k in record}:
+                        matching_key = {k.lower(): k for k in record}[field.lower()]
+                        standardized_record[field] = record[matching_key]
+                    # Handle special cases
+                    elif field == 'Attorney phone number' and 'Attorney Phone Number' in record:
+                        standardized_record[field] = record['Attorney Phone Number']
+                    elif field == 'First date published in Legal News' and 'First Date Published in Legal News' in record:
+                        standardized_record[field] = record['First Date Published in Legal News']
+                    else:
+                        standardized_record[field] = "N/A"
+                
+                writer.writerow(standardized_record)
+        
+        print(f"AI processing completed. Saved processed data to {ai_csv_filename}")
+    
+    except ImportError:
+        print("Groq package not installed. Install it with: pip install groq")
+    except Exception as e:
+        print(f"Error during Groq processing: {str(e)}")
+        print("Falling back to using direct API calls with requests...")
+        process_with_requests(foreclosure_data, os.getenv("GROQ_API_KEY"))
+
+    # Save the original data to CSV
+    csv_filename = "foreclosures.csv"
+    print(f"Saving original data to {csv_filename}...")
+    
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = ['foreclosure_number', 'published_dates', 'address', 'name', 'description', 'url']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        
+        writer.writeheader()
+        for foreclosure in all_foreclosures:
+            writer.writerow(foreclosure)
     
 else:
     print("Login failed!")

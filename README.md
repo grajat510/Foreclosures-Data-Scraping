@@ -21,7 +21,6 @@ This script scrapes foreclosure notices from legalnews.com for Kent County. It u
    USER_NAME=your_email@example.com
    PASSWORD=your_password
    ```
-
 3. Run the script:
    ```
    python requests-sessions.py
@@ -45,3 +44,8 @@ The script will then:
 - `foreclosures.csv`: CSV file containing all scraped foreclosure data
 - `foreclosures.json`: JSON file containing the same data in JSON format
 - `search_response.html`: Debug file containing the HTML of the search results page 
+- Automated login to LegalNews.com
+- Search for foreclosure notices in Kent County
+- Scrape foreclosure details including addresses, names, and descriptions
+- Process data using Groq AI to extract structured information
+- Export to JSON and CSV formats

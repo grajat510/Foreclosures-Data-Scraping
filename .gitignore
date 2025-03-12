@@ -14,3 +14,9 @@ __pycache__/
 
 # HTML debug files
 *.html
+
+# Output files
+search_response.html
+foreclosures.json
+foreclosures.csv
+foreclosures_processed.csv
