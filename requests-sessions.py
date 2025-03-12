@@ -5,6 +5,10 @@ import json
 import time
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Create a session object to maintain cookies
 session = requests.Session()
@@ -35,8 +39,8 @@ print(f"Extracted token: {token}")
 
 # Step 3: Prepare the login payload
 payload = {
-    "UserName": "mikerossgrandrapidsrealty@gmail.com",
-    "Password": "password",
+    "UserName": os.getenv("USER_NAME"),
+    "Password": os.getenv("PASSWORD"),
     "__RequestVerificationToken": token
 }
 

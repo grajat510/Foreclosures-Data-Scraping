@@ -1,1 +1,16 @@
 venv/
+
+# Environment variables
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# CSV and JSON output files
+*.csv
+*.json
+
+# HTML debug files
+*.html
