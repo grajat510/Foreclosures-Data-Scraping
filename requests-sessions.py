@@ -36,7 +36,7 @@ print(f"Extracted token: {token}")
 # Step 3: Prepare the login payload
 payload = {
     "UserName": "mikerossgrandrapidsrealty@gmail.com",
-    "Password": "1Sunvalley",
+    "Password": "password",
     "__RequestVerificationToken": token
 }
 
@@ -61,6 +61,18 @@ if login_response.status_code == 200:
     search_token_input = search_soup.find('input', {'name': '__RequestVerificationToken'})
     search_token = search_token_input['value'] if search_token_input else None
     
+    # Examine the county dropdown to understand its structure
+    county_dropdown = search_soup.find('select', {'id': 'drpcounty'})
+    if county_dropdown:
+        print("Found county dropdown")
+        kent_option = None
+        for option in county_dropdown.find_all('option'):
+            if option.text.strip() == 'Kent':
+                kent_option = option
+                print(f"Found Kent option: {option}")
+                print(f"Kent option value: {option.get('value', 'Kent')}")
+                break
+    
     # Ask user for date range
     start_date = input("Enter start date (MM/DD/YYYY): ")
     end_date = input("Enter end date (MM/DD/YYYY): ")
@@ -81,22 +93,16 @@ if login_response.status_code == 200:
         "action": "search",
         "search": "",
         "__RequestVerificationToken": search_token,
-        "foreclosures": "true",  # Select Foreclosures checkbox
-        "foreclosures": "false",  # Need to include both values as shown in the payload
         "foreclosurePrevention": "false",
-        "foreclosurePrevention": "false",  # Duplicate key as shown in payload
         "probates": "false",
-        "probates": "false",  # Duplicate key as shown in payload
         "vehicleAbandonment": "false",
-        "vehicleAbandonment": "false",  # Duplicate key as shown in payload
         "other": "false",
-        "other": "false",  # Duplicate key as shown in payload
-        "drpproximity": "county",  # Select County option
-        "drpcounty": "Kent",  # Select Kent County
+        "drpproximity": "county",
+        "drpcounty": "Kent",
         "city": "",
         "zip": "",
-        "first_date_published": formatted_start_date,  # First date
-        "first_date_published_thru": formatted_end_date,  # Through date
+        "first_date_published": formatted_start_date,
+        "first_date_published_thru": formatted_end_date,
         "last_date_published": "",
         "last_date_published_thru": "",
         "published_sale_date": "",
@@ -106,11 +112,37 @@ if login_response.status_code == 200:
         "attorney": "",
         "fileNumber": "",
         "internalId": "",
-        "advancedSearchResults": "1"
+        "advancedSearchResults": "1",
+        "proximity": "county",
+        "county": "Kent"
     }
     
+    # We can't have duplicate keys in a Python dictionary, so we need to handle the form data differently
+    # Create a list of tuples for the form data to preserve duplicate keys
+    form_data = []
+    
+    # Add all the regular fields
+    for key, value in search_data.items():
+        # Special handling for drpcounty to ensure Kent is selected
+        if key == 'drpcounty':
+            # Make sure we're using the correct value for Kent
+            form_data.append((key, 'Kent'))
+        else:
+            form_data.append((key, value))
+    
+    # Add the special checkbox fields
+    # For "foreclosures", we want it checked (true)
+    form_data.append(("foreclosures", "true"))
+    form_data.append(("foreclosures", "false"))
+    
+    # For other checkboxes, we want them unchecked (only false)
+    form_data.append(("foreclosurePrevention", "false"))
+    form_data.append(("probates", "false"))
+    form_data.append(("vehicleAbandonment", "false"))
+    form_data.append(("other", "false"))
+    
     # Print the search data for debugging
-    print("Search form data:", search_data)
+    print("Search form data:", form_data)
     
     # Step 9: Submit the search form
     print("Submitting search form...")
@@ -121,8 +153,13 @@ if login_response.status_code == 200:
     search_headers['Content-Type'] = 'application/x-www-form-urlencoded'
     
     # Submit the search form
-    search_response = session.post(public_notices_url, data=search_data, headers=search_headers)
+    search_response = session.post(public_notices_url, data=form_data, headers=search_headers)
     print(f"Search response status code: {search_response.status_code}")
+    
+    # Debug: Save the search response to a file for inspection
+    with open("search_response.html", "w", encoding="utf-8") as f:
+        f.write(search_response.text)
+    print("Saved search response to search_response.html for inspection")
     
     # Create a list to store all foreclosure data
     all_foreclosures = []
