@@ -65,17 +65,85 @@ if login_response.status_code == 200:
     search_token_input = search_soup.find('input', {'name': '__RequestVerificationToken'})
     search_token = search_token_input['value'] if search_token_input else None
     
-    # Examine the county dropdown to understand its structure
+    # Debug token extraction
+    if search_token:
+        print(f"Extracted search token: {search_token}")
+    else:
+        print("Warning: Could not extract search token")
+        # Try to find any form with a token
+        forms = search_soup.find_all('form')
+        for form in forms:
+            token_input = form.find('input', {'name': '__RequestVerificationToken'})
+            if token_input and token_input.get('value'):
+                search_token = token_input.get('value')
+                print(f"Found alternative token: {search_token}")
+                break
+        
+        # If still no token, reuse the login token as a fallback
+        if not search_token:
+            print("Using login token as fallback")
+            search_token = token
+    
+    # Extract all counties from the dropdown
     county_dropdown = search_soup.find('select', {'id': 'drpcounty'})
+    counties = []
+    counties_values = {}  # Store the values along with the display text
+    
     if county_dropdown:
         print("Found county dropdown")
-        kent_option = None
+        # First add "All Counties" option if it exists
+        all_counties_option = county_dropdown.find('option', {'value': 'all'})
+        if all_counties_option:
+            counties.append("All Counties")
+            counties_values["All Counties"] = "all"  # Store the value "all" for All Counties
+        
+        # Then add individual counties
         for option in county_dropdown.find_all('option'):
-            if option.text.strip() == 'Kent':
-                kent_option = option
-                print(f"Found Kent option: {option}")
-                print(f"Kent option value: {option.get('value', 'Kent')}")
-                break
+            if option.get('data-isaccess') == "True":
+                county_name = option.text.strip()
+                counties.append(county_name)
+                # Store the value attribute if it exists, otherwise use the text
+                counties_values[county_name] = option.get('value', county_name)
+        
+        print(f"Found {len(counties)} counties")
+    else:
+        # Fallback list if dropdown not found on the page
+        counties = [
+            "All Counties", "Alcona", "Alger", "Allegan", "Alpena", "Antrim", "Arenac", "Baraga", 
+            "Barry", "Bay", "Benzie", "Berrien", "Branch", "Calhoun", "Cass", "Charlevoix", 
+            "Cheboygan", "Chippewa", "Clare", "Clinton", "Crawford", "Delta", "Dickinson", 
+            "Eaton", "Emmet", "Genesee", "Gladwin", "Gogebic", "Grand Traverse", "Gratiot", 
+            "Hillsdale", "Houghton", "Huron", "Ingham", "Ionia", "Iosco", "Iron", "Isabella", 
+            "Jackson", "Kalamazoo", "Kalkaska", "Kent", "Keweenaw", "Lake", "Lapeer", "Leelanau", 
+            "Lenawee", "Livingston", "Luce", "Mackinac", "Macomb", "Manistee", "Marquette", 
+            "Mason", "Mecosta", "Menominee", "Midland", "Missaukee", "Monroe", "Montcalm", 
+            "Montmorency", "Muskegon", "Newaygo", "Oakland", "Oceana", "Ogemaw", "Ontonagon", 
+            "Osceola", "Oscoda", "Otsego", "Ottawa", "Presque Isle", "Roscommon", "Saginaw", 
+            "Saint Clair", "Saint Joseph", "Sanilac", "Schoolcraft", "Shiawassee", "Tuscola", 
+            "Van Buren", "Washtenaw", "Wayne", "Wexford"
+        ]
+        # Set default values for fallback
+        counties_values = {county: county for county in counties}
+        counties_values["All Counties"] = "all"  # Special case for All Counties
+        print(f"Using fallback county list with {len(counties)} counties")
+
+    # Display county options to user
+    print("\nAvailable counties:")
+    for i, county in enumerate(counties, 1):
+        print(f"{i}. {county}")
+
+    # Get county selection from user
+    selected_county_index = 0
+    while selected_county_index < 1 or selected_county_index > len(counties):
+        try:
+            selected_county_index = int(input(f"\nSelect a county (1-{len(counties)}): "))
+            if selected_county_index < 1 or selected_county_index > len(counties):
+                print(f"Please enter a number between 1 and {len(counties)}")
+        except ValueError:
+            print("Please enter a valid number")
+
+    selected_county = counties[selected_county_index - 1]
+    print(f"Selected county: {selected_county}")
     
     # Ask user for date range
     start_date = input("Enter start date (MM/DD/YYYY): ")
@@ -93,6 +161,9 @@ if login_response.status_code == 200:
         formatted_end_date = ""
     
     # Step 8: Prepare search form data
+    county_value = counties_values.get(selected_county, selected_county)
+    print(f"Using county value: {county_value} for {selected_county}")
+    
     search_data = {
         "action": "search",
         "search": "",
@@ -102,7 +173,7 @@ if login_response.status_code == 200:
         "vehicleAbandonment": "false",
         "other": "false",
         "drpproximity": "county",
-        "drpcounty": "Kent",
+        "drpcounty": county_value,
         "city": "",
         "zip": "",
         "first_date_published": formatted_start_date,
@@ -118,7 +189,7 @@ if login_response.status_code == 200:
         "internalId": "",
         "advancedSearchResults": "1",
         "proximity": "county",
-        "county": "Kent"
+        "county": county_value
     }
     
     # We can't have duplicate keys in a Python dictionary, so we need to handle the form data differently
@@ -127,10 +198,9 @@ if login_response.status_code == 200:
     
     # Add all the regular fields
     for key, value in search_data.items():
-        # Special handling for drpcounty to ensure Kent is selected
+        # Special handling for drpcounty to use selected county value
         if key == 'drpcounty':
-            # Make sure we're using the correct value for Kent
-            form_data.append((key, 'Kent'))
+            form_data.append((key, county_value))
         else:
             form_data.append((key, value))
     
@@ -260,7 +330,7 @@ if login_response.status_code == 200:
     pagination = soup.find('div', {'id': 'pagination'})
     if not pagination:
         # Try alternative ways to find pagination info
-        pagination_text = soup.find(text=lambda t: t and 'results found' in t)
+        pagination_text = soup.find(string=lambda t: t and 'results found' in t)
         if pagination_text:
             pagination = pagination_text.parent
     
@@ -299,7 +369,7 @@ if login_response.status_code == 200:
         # If we can't find pagination div, try alternative methods
         if not pagination:
             # Look for text containing "Page X of Y"
-            page_text = soup.find(text=lambda t: t and 'Page' in t and 'of' in t)
+            page_text = soup.find(string=lambda t: t and 'Page' in t and 'of' in t)
             if page_text:
                 pagination = page_text.parent
         
@@ -309,7 +379,7 @@ if login_response.status_code == 200:
         
         if pagination:
             # Try different ways to find the next link
-            next_link = pagination.find('a', text=lambda t: t and ('≫' in t or 'Next' in t))
+            next_link = pagination.find('a', string=lambda t: t and ('≫' in t or 'Next' in t))
             if not next_link:
                 next_link = pagination.find('a', string=lambda s: s and ('Next' in s or '>' in s))
             
