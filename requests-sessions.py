@@ -426,25 +426,32 @@ if login_response.status_code == 200:
                 {"role": "system", "content": "You are a data extraction expert. Extract structured data from foreclosure notices."},
                 {"role": "user", "content": f"""
                 Extract the following fields from these foreclosure notices and return as JSON: 
-                1) Name
-                2) Address
-                3) City
-                4) State
-                5) Zip
-                6) Mortgage or a lien (Condo?)
-                7) Sale Date
-                8) Amount Due
-                9) Redemption Period
-                10) Attorney Name
-                11) Attorney Address
-                12) Attorney phone number (as 'Attorney Phone Number')
-                13) Attorney File #
-                14) First date published in Legal News (as 'First date published in Legal News')
-                15) Last Date Published in Legal News
-                16) Lender/Mortgage company's name
-                17) Recorded Date
+                1) First Name (extracted from the person's name)
+                2) Middle Name (extracted from the person's name, can be empty)
+                3) Last Name (extracted from the person's name)
+                4) Street Address (the full street address)
+                5) City
+                6) State
+                7) Zip
+                8) Mortgage or a lien (Condo?)
+                9) Sale Date
+                10) Amount Due
+                11) Redemption Period
+                12) Attorney Name
+                13) Attorney Address
+                14) Attorney phone number (as 'Attorney phone number')
+                15) Attorney File #
+                16) First date published in Legal News (as 'First date published in Legal News')
+                17) Last Date Published in Legal News
+                18) Lender/Mortgage company's name
+                19) Recorded Date
                 
-                IMPORTANT: Please use EXACTLY these field names in your response.
+                IMPORTANT: 
+                1. Please use EXACTLY these field names in your response.
+                2. The original 'Name' field should be split into First Name, Middle Name, and Last Name.
+                3. If there is no middle name, return an empty string for Middle Name.
+                4. Use 'Street Address' instead of 'Address' for the street address field.
+                
                 Here's the data: {json.dumps(batch, indent=2)}
                 """}
             ],
@@ -518,25 +525,32 @@ if login_response.status_code == 200:
                     {"role": "system", "content": "You are a data extraction expert. Extract structured data from foreclosure notices."},
                     {"role": "user", "content": f"""
                     Extract the following fields from these foreclosure notices and return as JSON: 
-                    1) Name
-                    2) Address
-                    3) City
-                    4) State
-                    5) Zip
-                    6) Mortgage or a lien (Condo?)
-                    7) Sale Date
-                    8) Amount Due
-                    9) Redemption Period
-                    10) Attorney Name
-                    11) Attorney Address
-                    12) Attorney phone number (as 'Attorney phone number')
-                    13) Attorney File #
-                    14) First date published in Legal News (as 'First date published in Legal News')
-                    15) Last Date Published in Legal News
-                    16) Lender/Mortgage company's name
-                    17) Recorded Date
+                    1) First Name (extracted from the person's name)
+                    2) Middle Name (extracted from the person's name, can be empty)
+                    3) Last Name (extracted from the person's name)
+                    4) Street Address (the full street address)
+                    5) City
+                    6) State
+                    7) Zip
+                    8) Mortgage or a lien (Condo?)
+                    9) Sale Date
+                    10) Amount Due
+                    11) Redemption Period
+                    12) Attorney Name
+                    13) Attorney Address
+                    14) Attorney phone number (as 'Attorney phone number')
+                    15) Attorney File #
+                    16) First date published in Legal News (as 'First date published in Legal News')
+                    17) Last Date Published in Legal News
+                    18) Lender/Mortgage company's name
+                    19) Recorded Date
                     
-                    IMPORTANT: Please use EXACTLY these field names in your response.
+                    IMPORTANT: 
+                    1. Please use EXACTLY these field names in your response.
+                    2. The original 'Name' field should be split into First Name, Middle Name, and Last Name.
+                    3. If there is no middle name, return an empty string for Middle Name.
+                    4. Use 'Street Address' instead of 'Address' for the street address field.
+                    
                     Here's the data: {json.dumps(batch, indent=2)}
                     """}
                 ],
@@ -588,7 +602,7 @@ if login_response.status_code == 200:
         
         # Define the fields with exactly matching names
         ai_fieldnames = [
-            'Name', 'Address', 'City', 'State', 'Zip', 
+            'First Name', 'Middle Name', 'Last Name', 'Street Address', 'City', 'State', 'Zip', 
             'Mortgage or a lien (Condo?)', 'Sale Date', 'Amount Due', 'Redemption Period',
             'Attorney Name', 'Attorney Address', 'Attorney phone number', 'Attorney File #',
             'First date published in Legal News', 'Last Date Published in Legal News',
@@ -601,7 +615,38 @@ if login_response.status_code == 200:
             for record in processed_records:
                 # Create a new record with standardized field names
                 standardized_record = {}
+                
+                # Handle Name field splitting if Name is present but First/Middle/Last are not
+                if 'Name' in record and not ('First Name' in record and 'Last Name' in record):
+                    name_parts = record['Name'].split()
+                    if len(name_parts) == 1:
+                        # Only one name part available
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Middle Name'] = ""
+                        standardized_record['Last Name'] = ""
+                    elif len(name_parts) == 2:
+                        # First and Last name
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Middle Name'] = ""
+                        standardized_record['Last Name'] = name_parts[1]
+                    else:
+                        # First, Middle (possibly multiple), and Last name
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Last Name'] = name_parts[-1]
+                        standardized_record['Middle Name'] = " ".join(name_parts[1:-1])
+                
+                # Handle Address to Street Address conversion
+                if 'Address' in record and 'Street Address' not in record:
+                    standardized_record['Street Address'] = record['Address']
+                
+                # Process all other fields
                 for field in ai_fieldnames:
+                    # Skip already handled fields
+                    if field in ['First Name', 'Middle Name', 'Last Name'] and 'Name' in record:
+                        continue
+                    if field == 'Street Address' and 'Address' in record:
+                        continue
+                        
                     # Try different variations of field names
                     if field in record:
                         standardized_record[field] = record[field]
@@ -614,7 +659,8 @@ if login_response.status_code == 200:
                         standardized_record[field] = record['Attorney Phone Number']
                     elif field == 'First date published in Legal News' and 'First Date Published in Legal News' in record:
                         standardized_record[field] = record['First Date Published in Legal News']
-                    else:
+                    # Ensure all required fields have a value
+                    elif field not in standardized_record:
                         standardized_record[field] = "N/A"
                 
                 writer.writerow(standardized_record)
@@ -649,27 +695,33 @@ if login_response.status_code == 200:
             combined_prompt = f"""
             I need to extract structured data from these foreclosure notices. Please parse the following JSON data and extract these fields:
             
-            1) Name
-            2) Address
-            3) City
-            4) State
-            5) Zip
-            6) Mortgage or a lien (Condo?)
-            7) Sale Date
-            8) Amount Due
-            9) Redemption Period
-            10) Attorney Name
-            11) Attorney Address
-            12) Attorney phone number
-            13) Attorney File #
-            14) First date published in Legal News
-            15) Last Date Published in Legal News
-            16) Lender/Mortgage company's name
-            17) Recorded Date
+            1) First Name (extracted from the person's name)
+            2) Middle Name (extracted from the person's name, can be empty)
+            3) Last Name (extracted from the person's name)
+            4) Street Address (the full street address)
+            5) City
+            6) State
+            7) Zip
+            8) Mortgage or a lien (Condo?)
+            9) Sale Date
+            10) Amount Due
+            11) Redemption Period
+            12) Attorney Name
+            13) Attorney Address
+            14) Attorney phone number
+            15) Attorney File #
+            16) First date published in Legal News
+            17) Last Date Published in Legal News
+            18) Lender/Mortgage company's name
+            19) Recorded Date
             
             Return the data as a JSON array with these fields for each record. If a field cannot be found, use null or N/A.
             
-            IMPORTANT: Please use EXACTLY these field names in your response.
+            IMPORTANT: 
+            1. Please use EXACTLY these field names in your response.
+            2. The original 'Name' field should be split into First Name, Middle Name, and Last Name.
+            3. If there is no middle name, return an empty string for Middle Name.
+            4. Use 'Street Address' instead of 'Address' for the street address field.
             
             Here is the foreclosure data to parse:
             {json.dumps(batch, indent=2)}
@@ -731,7 +783,7 @@ if login_response.status_code == 200:
         
         # Define the fields as per the requirements
         ai_fieldnames = [
-            'Name', 'Address', 'City', 'State', 'Zip', 
+            'First Name', 'Middle Name', 'Last Name', 'Street Address', 'City', 'State', 'Zip', 
             'Mortgage or a lien (Condo?)', 'Sale Date', 'Amount Due', 'Redemption Period',
             'Attorney Name', 'Attorney Address', 'Attorney phone number', 'Attorney File #',
             'First date published in Legal News', 'Last Date Published in Legal News',
@@ -744,7 +796,38 @@ if login_response.status_code == 200:
             for record in processed_records:
                 # Create a new record with standardized field names
                 standardized_record = {}
+                
+                # Handle Name field splitting if Name is present but First/Middle/Last are not
+                if 'Name' in record and not ('First Name' in record and 'Last Name' in record):
+                    name_parts = record['Name'].split()
+                    if len(name_parts) == 1:
+                        # Only one name part available
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Middle Name'] = ""
+                        standardized_record['Last Name'] = ""
+                    elif len(name_parts) == 2:
+                        # First and Last name
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Middle Name'] = ""
+                        standardized_record['Last Name'] = name_parts[1]
+                    else:
+                        # First, Middle (possibly multiple), and Last name
+                        standardized_record['First Name'] = name_parts[0]
+                        standardized_record['Last Name'] = name_parts[-1]
+                        standardized_record['Middle Name'] = " ".join(name_parts[1:-1])
+                
+                # Handle Address to Street Address conversion
+                if 'Address' in record and 'Street Address' not in record:
+                    standardized_record['Street Address'] = record['Address']
+                
+                # Process all other fields
                 for field in ai_fieldnames:
+                    # Skip already handled fields
+                    if field in ['First Name', 'Middle Name', 'Last Name'] and 'Name' in record:
+                        continue
+                    if field == 'Street Address' and 'Address' in record:
+                        continue
+                        
                     # Try different variations of field names
                     if field in record:
                         standardized_record[field] = record[field]
@@ -757,7 +840,8 @@ if login_response.status_code == 200:
                         standardized_record[field] = record['Attorney Phone Number']
                     elif field == 'First date published in Legal News' and 'First Date Published in Legal News' in record:
                         standardized_record[field] = record['First Date Published in Legal News']
-                    else:
+                    # Ensure all required fields have a value
+                    elif field not in standardized_record:
                         standardized_record[field] = "N/A"
                 
                 writer.writerow(standardized_record)
